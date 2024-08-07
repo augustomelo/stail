@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -41,8 +42,53 @@ const (
 	DATADOG Integration = "DATADOG"
 )
 
+type DataDogLogResponse struct {
+	Data []struct {
+		Attributes struct {
+			Attributes map[string]any `json:"attributes,omitempty"`
+			Host       string         `json:"host,omitempty"`
+			Message    string         `json:"message,omitempty"`
+			Service    string         `json:"service,omitempty"`
+			Status     string         `json:"status,omitempty"`
+			Tags       []string       `json:"tags,omitempty"`
+			Timestamp  time.Time      `json:"timestamp"`
+		} `json:"attributes,omitempty"`
+		ID   string `json:"id"`
+		Type string `json:"type,omitempty"`
+	} `json:"data,omitempty"`
+	Links struct {
+		Next string `json:"next,omitempty"`
+	} `json:"links,omitempty"`
+	Meta struct {
+		Elapsed int `json:"elapsed,omitempty"`
+		Page    struct {
+			After string `json:"after,omitempty"`
+		} `json:"page,omitempty"`
+		RequestID string `json:"request_id,omitempty"`
+		Status    string `json:"status,omitempty"`
+		Warnings  []struct {
+			Code   string `json:"code,omitempty"`
+			Detail string `json:"detail,omitempty"`
+			Title  string `json:"title,omitempty"`
+		} `json:"warnings,omitempty"`
+	} `json:"meta,omitempty"`
+}
+
 type Producer interface {
-	Produce(context.Context) (string, error)
+	Produce(context.Context) (*[]byte, error)
+}
+
+type Mapper interface {
+	Map(*[]byte)
+}
+
+type Log struct {
+	ID         string
+	Timestamp  time.Time
+	Attributes map[string]any
+	Level      string
+	Message    string
+	Tags       []string
 }
 
 type DataDogSource struct {
@@ -76,7 +122,7 @@ func buildDataDogSource() *DataDogSource {
 	return ddSource
 }
 
-func (source DataDogSource) Produce(context.Context) (string, error) {
+func (source DataDogSource) Produce(ctx context.Context) (*[]byte, error) {
 	query := source.URL.Query()
 	query.Set(DATADOG_QUERY_FILTER_QUERY, "")
 	query.Set(DATADOG_QUERY_SORT, DATADOG_QUERY_SORT_ASCENDING)
@@ -86,7 +132,7 @@ func (source DataDogSource) Produce(context.Context) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, source.URL.String(), nil)
 	if err != nil {
 		slog.Error("Error while creating request", "err", err)
-		return "", err
+		return nil, err
 	}
 
 	req.Header = source.Headers
@@ -94,18 +140,43 @@ func (source DataDogSource) Produce(context.Context) (string, error) {
 	resp, err := source.Client.Do(req)
 	if err != nil {
 		slog.Error("Error while performing the request", "err", err)
-		return "", err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 	bodyResponse, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Error("Error while reading the response", "err", err)
-		return "", err
+		return nil, err
 	}
 
-	slog.Debug("Body resposse", "body", bodyResponse)
-	return string(bodyResponse), err
+	// Should be dealing the erros 400, 403, 429
+	// https://docs.datadoghq.com/api/latest/logs/?code-lang=go#get-a-list-of-logs
+	slog.Debug("Body resposse", "body", string(bodyResponse))
+	return &bodyResponse, err
+}
+
+func (source DataDogSource) Map(body *[]byte) {
+	var ddResponse DataDogLogResponse
+
+	err := json.Unmarshal(*body, &ddResponse)
+	if err != nil {
+		slog.Error("Error while unmarshalling the response", "err", err)
+	}
+
+	var logs []Log
+	for _, v := range ddResponse.Data {
+		logs = append(logs, Log{
+			Attributes: v.Attributes.Attributes,
+			ID:         v.ID,
+			Level:      v.Attributes.Status,
+			Message:    v.Attributes.Message,
+			Tags:       v.Attributes.Tags,
+			Timestamp:  v.Attributes.Timestamp,
+		})
+
+		slog.Debug("Mapped logs", "logs", logs)
+	}
 }
 
 func main() {
@@ -117,7 +188,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	source.Produce(ctx)
+	body, err := source.Produce(ctx)
+	if err != nil {
+		slog.Error("Error while producing logs", "err", err)
+	}
+	source.Map(body)
 
 	slog.Debug("End")
 }
