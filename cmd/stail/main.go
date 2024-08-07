@@ -174,9 +174,9 @@ func (source DataDogSource) Map(body *[]byte) {
 			Tags:       v.Attributes.Tags,
 			Timestamp:  v.Attributes.Timestamp,
 		})
-
-		slog.Debug("Mapped logs", "logs", logs)
 	}
+
+	slog.Debug("Mapped logs", "logs", logs)
 }
 
 func main() {
