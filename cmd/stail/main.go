@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
+
+	"github.com/augustomelo/stail/internal/ui/view"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // API docs https://docs.datadoghq.com/api/latest/logs/?code-lang=go#get-a-list-of-logs
@@ -181,7 +185,26 @@ func (source DataDogSource) Map(body *[]byte) {
 
 func main() {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
+
+	f, err := tea.LogToFile("debug.log", "debug")
+	if err != nil {
+		fmt.Println("fatal:", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
 	slog.Debug("Start")
+
+	p := tea.NewProgram(
+		view.InitialModel(),
+		tea.WithAltScreen(),
+	)
+
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Alas, there's been an error: %v", err)
+		slog.Error("Error while instantiating view", "err", err)
+		os.Exit(1)
+	}
 
 	source := buildDataDogSource()
 
