@@ -13,7 +13,7 @@ type QueryInput struct {
 	// limit     int
 }
 
-func New() QueryInput {
+func NewQueryInput() QueryInput {
 	ti := textinput.New()
 	ti.Placeholder = "Query"
 	ti.Focus()
@@ -29,7 +29,7 @@ func New() QueryInput {
 	}
 }
 
-func (qi *QueryInput) Redraw(termHeight int, termWidth int) {
+func (qi *QueryInput) RedrawQueryInput(termHeight int, termWidth int) {
 	// Magic numbers, should be remvoed when using lip gloss as container
 	padding := 2
 	overflowRight :=  1
