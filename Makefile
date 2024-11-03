@@ -1,2 +1,2 @@
 run:
-	go run ./cmd/stail/main.go
+	go run ./cmd/stail/stail.go
