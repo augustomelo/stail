@@ -112,7 +112,7 @@ func BuildDataDogSource() *DataDogSource {
 			Path:   "/api/v2/logs/events",
 		},
 		Client: &http.Client{
-			Timeout: time.Duration(1) * time.Second,
+			Timeout: time.Duration(10) * time.Second,
 		},
 		Type: DATADOG,
 	}
@@ -156,7 +156,7 @@ func (source DataDogSource) Produce(ctx context.Context) (*[]byte, error) {
 	return &bodyResponse, err
 }
 
-func (source DataDogSource) Map(body *[]byte) {
+func (source DataDogSource) Map(body *[]byte) []Log {
 	var ddResponse DataDogLogResponse
 
 	err := json.Unmarshal(*body, &ddResponse)
@@ -177,4 +177,5 @@ func (source DataDogSource) Map(body *[]byte) {
 	}
 
 	slog.Debug("Mapped logs", "logs", logs)
+	return logs
 }

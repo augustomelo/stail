@@ -1,8 +1,10 @@
 package component
 
 import (
+	"log/slog"
 	"time"
 
+	"github.com/augustomelo/stail/pkg/source"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -16,19 +18,13 @@ type TableLog struct {
 
 func NewTableLog() TableLog {
 	columns := []table.Column{
-		{Title: "Date", Width: 4},
-		{Title: "Level", Width: 10},
-		{Title: "Message", Width: 10},
-	}
-
-	rows := []table.Row{
-		{time.Now().String(), "INFO", "Something happened"},
-		{time.Now().Add(-time.Duration(40) * time.Minute).String(), "ERROR", "A wild error appear"},
+		{Title: "Date", Width: 20},
+		{Title: "Level", Width: 5},
+		{Title: "Message", Width: 70},
 	}
 
 	t := table.New(
 		table.WithColumns(columns),
-		table.WithRows(rows),
 		table.WithFocused(false),
 		table.WithHeight(7),
 	)
@@ -43,7 +39,7 @@ func NewTableLog() TableLog {
 	}
 }
 
-func (tl *TableLog) RedrawTableLog(termHeight int, termWidth int)  {
+func (tl *TableLog) RedrawTableLog(termHeight int, termWidth int) {
 	// Magic numbers, should be remvoed when using lip gloss as container
 	paddingTable := 2
 	heightTextInput := 7
@@ -52,4 +48,22 @@ func (tl *TableLog) RedrawTableLog(termHeight int, termWidth int)  {
 
 	tl.Model.SetWidth(usableWidithTable)
 	tl.Model.SetHeight(usableHeightTable)
+}
+
+func (tl *TableLog) UpdateRowLog(logs []source.Log) {
+	rows := []table.Row{}
+
+	slog.Debug("Received logs", "size", len(logs))
+	for _, log := range logs {
+		rows = append(rows, table.Row{
+			log.Timestamp.Format(time.DateTime),
+			log.Level,
+			log.Message,
+		})
+	}
+
+	// I think that I still need to deal with overflow of elements, so I don't
+	// have a huge number of things not being displayed.
+	slog.Debug("Updating table log", "row", rows)
+	tl.Model.SetRows(append(rows, tl.Model.Rows()...))
 }

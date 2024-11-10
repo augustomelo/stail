@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
 
-
 	"github.com/augustomelo/stail/internal/ui/view"
-	"github.com/augustomelo/stail/pkg/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -34,17 +31,6 @@ func main() {
 		slog.Error("Error while instantiating view", "err", err)
 		os.Exit(1)
 	}
-
-	source := source.BuildDataDogSource()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	body, err := source.Produce(ctx)
-	if err != nil {
-		slog.Error("Error while producing logs", "err", err)
-	}
-	source.Map(body)
 
 	slog.Debug("End")
 }
