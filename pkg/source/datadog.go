@@ -119,12 +119,6 @@ func BuildDataDogSource() *DataDogSource {
 	return ddSource
 }
 
-func (source DataDogSource) a(ctx context.Context, c chan *[]byte) {
-	for {
-		select {}
-	}
-}
-
 func (source DataDogSource) Produce(ctx context.Context, dst chan *[]byte) {
 	query := source.URL.Query()
 	query.Set(DATADOG_QUERY_FILTER_QUERY, "")
