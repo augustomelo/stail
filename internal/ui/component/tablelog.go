@@ -50,17 +50,12 @@ func (tl *TableLog) RedrawTableLog(termHeight int, termWidth int) {
 	tl.Model.SetHeight(usableHeightTable)
 }
 
-func (tl *TableLog) UpdateRowLog(logs []source.Log) {
-	rows := []table.Row{}
-
-	slog.Debug("Received logs", "size", len(logs))
-	for _, log := range logs {
-		rows = append(rows, table.Row{
-			log.Timestamp.Format(time.DateTime),
-			log.Level,
-			log.Message,
-		})
-	}
+func (tl *TableLog) UpdateRowLog(log source.Log) {
+	rows := append([]table.Row{}, table.Row{
+		log.Timestamp.Format(time.DateTime),
+		log.Level,
+		log.Message,
+	})
 
 	// I think that I still need to deal with overflow of elements, so I don't
 	// have a huge number of things not being displayed.

@@ -3,49 +3,55 @@ package view
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/augustomelo/stail/internal/ui/component"
 	"github.com/augustomelo/stail/pkg/source"
+	"github.com/augustomelo/stail/pkg/stream"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type model struct {
 	qi component.QueryInput
 	tl component.TableLog
+	s  stream.Stream
+	l  chan source.Log
 }
 
 func InitialModel() model {
 	return model{
 		qi: component.NewQueryInput(),
 		tl: component.NewTableLog(),
+		s:  stream.Stream{},
+		l:  make(chan source.Log),
 	}
 }
 
-func fetchLogs() tea.Msg {
-	source := source.BuildDataDogSource()
+func startStream(m model) tea.Cmd {
+	m.s.Start(context.Background(), source.BuildDataDogSource(), m.l)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	return nil
+}
 
-	body, err := source.Produce(ctx)
-	if err != nil {
-		slog.Error("Error while producing logs", "err", err)
+func waitForLogs(l chan source.Log) tea.Cmd {
+	return func() tea.Msg {
+		return <- l
 	}
-
-	return source.Map(body)
 }
 
 func (m model) Init() tea.Cmd {
-	return fetchLogs
+	return tea.Batch(
+		startStream(m),
+		waitForLogs(m.l),
+	)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case []source.Log:
+	case source.Log:
 		m.tl.UpdateRowLog(msg)
+		return m, waitForLogs(m.l)
 
 	case tea.KeyMsg:
 

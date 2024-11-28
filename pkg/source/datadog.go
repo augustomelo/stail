@@ -74,12 +74,9 @@ type DataDogLogResponse struct {
 	} `json:"meta,omitempty"`
 }
 
-type Producer interface {
-	Produce(context.Context) (*[]byte, error)
-}
-
-type Mapper interface {
-	Map(*[]byte)
+type Source interface {
+	Produce(ctx context.Context, c chan *[]byte)
+	Map(src chan *[]byte, dst chan Log)
 }
 
 type Log struct {
@@ -122,7 +119,13 @@ func BuildDataDogSource() *DataDogSource {
 	return ddSource
 }
 
-func (source DataDogSource) Produce(ctx context.Context) (*[]byte, error) {
+func (source DataDogSource) a(ctx context.Context, c chan *[]byte) {
+	for {
+		select {}
+	}
+}
+
+func (source DataDogSource) Produce(ctx context.Context, dst chan *[]byte) {
 	query := source.URL.Query()
 	query.Set(DATADOG_QUERY_FILTER_QUERY, "")
 	query.Set(DATADOG_QUERY_SORT, DATADOG_QUERY_SORT_ASCENDING)
@@ -132,7 +135,7 @@ func (source DataDogSource) Produce(ctx context.Context) (*[]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, source.URL.String(), nil)
 	if err != nil {
 		slog.Error("Error while creating request", "err", err)
-		return nil, err
+		panic(err)
 	}
 
 	req.Header = source.Headers
@@ -140,42 +143,48 @@ func (source DataDogSource) Produce(ctx context.Context) (*[]byte, error) {
 	resp, err := source.Client.Do(req)
 	if err != nil {
 		slog.Error("Error while performing the request", "err", err)
-		return nil, err
 	}
 
 	defer resp.Body.Close()
 	bodyResponse, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Error("Error while reading the response", "err", err)
-		return nil, err
 	}
 
 	// Should be dealing the erros 400, 403, 429
 	// https://docs.datadoghq.com/api/latest/logs/?code-lang=go#get-a-list-of-logs
 	slog.Debug("Body resposse", "body", string(bodyResponse))
-	return &bodyResponse, err
+	dst <- &bodyResponse
 }
 
-func (source DataDogSource) Map(body *[]byte) []Log {
-	var ddResponse DataDogLogResponse
+func (source DataDogSource) Map(src chan *[]byte, dst chan Log) {
+	for {
+		body, ok := <-src
 
-	err := json.Unmarshal(*body, &ddResponse)
-	if err != nil {
-		slog.Error("Error while unmarshalling the response", "err", err)
+		if !ok {
+			slog.Debug("Done map funciton")
+		}
+
+		var ddResponse DataDogLogResponse
+
+		err := json.Unmarshal(*body, &ddResponse)
+		if err != nil {
+			slog.Error("Error while unmarshalling the response", "err", err)
+		}
+
+		for _, v := range ddResponse.Data {
+			log := Log{
+				Attributes: v.Attributes.Attributes,
+				ID:         v.ID,
+				Level:      v.Attributes.Status,
+				Message:    v.Attributes.Message,
+				Tags:       v.Attributes.Tags,
+				Timestamp:  v.Attributes.Timestamp,
+			}
+
+			slog.Debug("Mapped", "log", log)
+
+			dst <- log
+		}
 	}
-
-	var logs []Log
-	for _, v := range ddResponse.Data {
-		logs = append(logs, Log{
-			Attributes: v.Attributes.Attributes,
-			ID:         v.ID,
-			Level:      v.Attributes.Status,
-			Message:    v.Attributes.Message,
-			Tags:       v.Attributes.Tags,
-			Timestamp:  v.Attributes.Timestamp,
-		})
-	}
-
-	slog.Debug("Mapped logs", "logs", logs)
-	return logs
 }
