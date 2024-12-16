@@ -9,50 +9,66 @@ import (
 )
 
 type Stream struct {
-	play  chan struct{}
-	pause chan struct{}
-	stop  chan struct{}
-}
-
-func (s *Stream) Play() {
-	s.play <- struct{}{}
+	pause  chan struct{}
+	resume chan struct{}
+	stop   chan struct{}
+	src    source.Source
 }
 
 func (s *Stream) Pause() {
+	slog.Debug("Pausing stream")
 	s.pause <- struct{}{}
 }
 
+func (s *Stream) Resume() {
+	slog.Debug("Resuming stream")
+	s.resume <- struct{}{}
+}
+
 func (s *Stream) Stop() {
+	slog.Debug("Stopping stream")
 	s.stop <- struct{}{}
 }
 
+func (s *Stream) UpdateQuery(q string) {
+	s.src.UpdateQuery(q)
+}
+
 func (s *Stream) Start(ctx context.Context, src source.Source, dst chan source.Log) {
+	s.src = src
+	s.resume = make(chan struct{})
+	s.pause = make(chan struct{})
+	s.stop = make(chan struct{})
+
 	go func(s *Stream) {
 		shared := make(chan *[]byte)
-		go src.Map(shared, dst)
+		go s.src.Map(shared, dst)
 
-	OutterLoop:
+	MainLoop:
 		for {
 			select {
 			case <-s.pause:
+			PauseLoop:
 				for {
-					slog.Debug("Paused producing logs")
 					select {
-					case <-s.play:
-						slog.Debug("Resume producing logs")
+					case <-s.pause:
+					case <-s.resume:
+						break PauseLoop
 					case <-s.stop:
-						slog.Debug("Stop producing logs")
-						break OutterLoop
+						break MainLoop
 					}
 				}
+
 			case <-s.stop:
-				slog.Debug("Stop producing logs")
-				break OutterLoop
+				break MainLoop
+
+			case <-s.resume:
 			default:
 				src.Produce(ctx, shared)
 				time.Sleep(1 * time.Second)
 			}
 		}
+
 		close(shared)
 	}(s)
 }

@@ -16,7 +16,6 @@ type QueryInput struct {
 func NewQueryInput() QueryInput {
 	ti := textinput.New()
 	ti.Placeholder = "Query"
-	ti.Focus()
 	ti.CharLimit = 256
 
 	st := lipgloss.NewStyle().

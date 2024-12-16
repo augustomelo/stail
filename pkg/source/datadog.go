@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -77,6 +78,8 @@ type DataDogLogResponse struct {
 type Source interface {
 	Produce(ctx context.Context, c chan *[]byte)
 	Map(src chan *[]byte, dst chan Log)
+	UpdateQuery(q string)
+	GetQuery() string
 }
 
 type Log struct {
@@ -93,6 +96,8 @@ type DataDogSource struct {
 	URL     *url.URL
 	Client  *http.Client
 	Type    Integration
+	q       string
+	mu      sync.RWMutex
 }
 
 // Read from XDG ?
@@ -112,6 +117,7 @@ func BuildDataDogSource() *DataDogSource {
 			Timeout: time.Duration(10) * time.Second,
 		},
 		Type: DATADOG,
+		q:    "",
 	}
 
 	slog.Debug("Built DataDogSource", "source", ddSource)
@@ -119,9 +125,24 @@ func BuildDataDogSource() *DataDogSource {
 	return ddSource
 }
 
-func (source DataDogSource) Produce(ctx context.Context, dst chan *[]byte) {
+func (source *DataDogSource) UpdateQuery(q string) {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+
+	slog.Info("Produce", "query", q)
+	source.q = q
+}
+
+func (source *DataDogSource) GetQuery() string {
+	source.mu.RLock()
+	defer source.mu.RUnlock()
+
+	return source.q
+}
+
+func (source *DataDogSource) Produce(ctx context.Context, dst chan *[]byte) {
 	query := source.URL.Query()
-	query.Set(DATADOG_QUERY_FILTER_QUERY, "")
+	query.Set(DATADOG_QUERY_FILTER_QUERY, source.GetQuery())
 	query.Set(DATADOG_QUERY_SORT, DATADOG_QUERY_SORT_ASCENDING)
 	query.Set(DATADOG_QUERY_PAGE_LIMIT, "1")
 	source.URL.RawQuery = query.Encode()
@@ -134,6 +155,7 @@ func (source DataDogSource) Produce(ctx context.Context, dst chan *[]byte) {
 
 	req.Header = source.Headers
 
+	slog.Debug("Produce", "request", req)
 	resp, err := source.Client.Do(req)
 	if err != nil {
 		slog.Error("Error while performing the request", "err", err)
@@ -151,7 +173,7 @@ func (source DataDogSource) Produce(ctx context.Context, dst chan *[]byte) {
 	dst <- &bodyResponse
 }
 
-func (source DataDogSource) Map(src chan *[]byte, dst chan Log) {
+func (source *DataDogSource) Map(src chan *[]byte, dst chan Log) {
 	for {
 		body, ok := <-src
 

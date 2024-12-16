@@ -25,7 +25,7 @@ func NewTableLog() TableLog {
 
 	t := table.New(
 		table.WithColumns(columns),
-		table.WithFocused(false),
+		table.WithFocused(true),
 		table.WithHeight(7),
 	)
 
